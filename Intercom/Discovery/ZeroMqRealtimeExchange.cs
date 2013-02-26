@@ -1,11 +1,14 @@
 ﻿using System;
+using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Net;
 using System.Net.Sockets;
+using System.Threading;
 using ZeroMQ;
+using SocketFlags = ZeroMQ.SocketFlags;
 using SocketType = ZeroMQ.SocketType;
 
 namespace Intercom.Discovery
@@ -82,6 +85,29 @@ namespace Intercom.Discovery
         private byte[] _beacon;
 
         /// <summary>
+        /// The dictionary of peers
+        /// </summary>
+        private ConcurrentDictionary<Guid, Node> _peers;
+
+        /// <summary>
+        /// The cancellation token source
+        /// </summary>
+        private CancellationTokenSource _cancellationTokenSource;
+
+        /// <summary>
+        /// Occurs when a peer was discovered.
+        /// </summary>
+        /// <remarks>
+        /// Peer discovery does not imply a successful connection.
+        /// </remarks>
+        public event EventHandler<PeerEventArgs> PeerDiscovered;
+
+        /// <summary>
+        /// Occurs when a peer was disconnected.
+        /// </summary>
+        public event EventHandler<PeerEventArgs> PeerDisconnected;
+        
+        /// <summary>
         /// Initializes a new instance of the <see cref="ZeroMqRealtimeExchange"/> class.
         /// </summary>
         /// <param name="uuid">The UUID.</param>
@@ -99,13 +125,19 @@ namespace Intercom.Discovery
         {
             if (Started) return true;
 
-            // Kontext erzeugen
+            // Prepare peer asynchronous operation
+            _cancellationTokenSource = new CancellationTokenSource();
+            _peers = new ConcurrentDictionary<Guid, Node>();
+
+            // Create the context
             _context = ZmqContext.Create();
 
-            // Router erzeugen und binden
+            // Create the mailbox router and connect it
             _mailbox = _context.CreateSocket(SocketType.ROUTER);
             _mailbox.Bind("tcp://*:*");
             
+            // TODO: Start mailbox processing task
+
             // Port ermitteln
             var port = _mailbox.LastEndpoint.Split(':').Last();
             if (!UInt16.TryParse(port, NumberStyles.Integer, CultureInfo.InvariantCulture, out _mailboxPort))
@@ -146,39 +178,66 @@ namespace Intercom.Discovery
         /// </summary>
         public void StopInternal()
         {
-            // Beacon freigeben
-            _beacon = null;
-
-            // Sender freigeben
-            if (_broadcastSender != null)
+            try
             {
-                _broadcastSender.Close();
-                _broadcastSender = null;
-            }
+                // Stoppity stop
+                _cancellationTokenSource.Cancel();
 
-            // Receiver freigeben
-            if (_broadcastReceiver != null)
+                // Release the Kraken
+                _beacon = null;
+
+                // Release broadcast sender
+                if (_broadcastSender != null)
+                {
+                    _broadcastSender.Close();
+                    _broadcastSender = null;
+                }
+
+                // Release broadcast receiver
+                if (_broadcastReceiver != null)
+                {
+                    _broadcastReceiver.Close();
+                    _broadcastReceiver = null;
+                }
+
+                // Release mailbox router
+                if (_mailbox != null)
+                {
+                    _mailbox.Close();
+                    _mailbox.Dispose();
+                    _mailbox = null;
+                }
+
+                // Release peers
+                var peers = _peers;
+                if (peers != null)
+                {
+                    _peers = null;
+                    foreach (var kvp in peers)
+                    {
+                        DisconnectPeer(kvp.Key);
+                    }
+                    peers.Clear();
+                }
+
+                // Lose context
+                if (_context != null)
+                {
+                    _context.Terminate();
+                    _context.Dispose();
+                    _context = null;
+                }
+            }
+            catch (Exception e)
             {
-                _broadcastReceiver.Close();
-                _broadcastReceiver = null;
+                Console.Error.WriteLine("An error occured during disposal: {0}", e.Message);
+                throw;
             }
-
-            // Router freigeben
-            if (_mailbox != null)
+            finally
             {
-                _mailbox.Dispose();
-                _mailbox = null;
+                // Oink
+                Started = false;
             }
-
-            // Kontext freigeben
-            if (_context != null)
-            {
-                _context.Dispose();
-                _context = null;
-            }
-
-            // Oink
-            Started = false;
         }
         
         /// <summary>
@@ -199,26 +258,31 @@ namespace Intercom.Discovery
         /// <param name="ar"></param>
         private void EndReceiveBroadcast(IAsyncResult ar)
         {
-            var state = ar.AsyncState as UdpState;
-            Debug.Assert(state != null);
+            try
+            {
+                var state = ar.AsyncState as UdpState;
+                Debug.Assert(state != null);
+            
+                // Receiver ermitteln
+                var receiver = state.Client;
+                if (receiver.Client == null) return;
+                if (!receiver.Client.IsBound) return;
 
-            // Receiver ermitteln
-            var receiver = state.Client;
-            Debug.Assert(receiver != null);
-            if (!receiver.Client.IsBound) return;
+                // Endpunkt ermitteln
+                IPEndPoint endpoint = state.EndPoint;
+                Debug.Assert(endpoint != null);
 
-            // Endpunkt ermitteln
-            IPEndPoint endpoint = state.EndPoint;
-            Debug.Assert(endpoint != null);
+                // Daten lesen
+                var payload = receiver.EndReceive(ar, ref endpoint);
 
-            // Daten lesen
-            var payload = receiver.EndReceive(ar, ref endpoint);
+                // Port freigeben
+                StartReceiveBroadcast(receiver);
 
-            // Port freigeben
-            StartReceiveBroadcast(receiver);
-
-            // Daten verarbeiten
-            ProcessBroadcastPayload(endpoint, payload);
+                // Daten verarbeiten
+                ProcessBroadcastPayload(endpoint, payload);
+            }
+            catch (ObjectDisposedException) { }
+            catch (SocketException) { }
         }
 
         /// <summary>
@@ -241,13 +305,13 @@ namespace Intercom.Discovery
             short b = BitConverter.ToInt16(payload, 8);
             short c = BitConverter.ToInt16(payload, 10);
             byte d = payload[12],
-                e = payload[13], 
-                f = payload[14], 
-                g = payload[15], 
-                h = payload[16], 
-                i = payload[17], 
-                j = payload[18], 
-                k = payload[19];
+                 e = payload[13],
+                 f = payload[14],
+                 g = payload[15],
+                 h = payload[16],
+                 i = payload[17],
+                 j = payload[18],
+                 k = payload[19];
             var uuid = new Guid(a, b, c, d, e, f, g, h, i, j, k);
             if (uuid == _uuid) return;
             
@@ -255,18 +319,98 @@ namespace Intercom.Discovery
             ushort port = (ushort)IPAddress.NetworkToHostOrder(BitConverter.ToInt16(payload, 20));
 
             // Mailbox registrieren
-            RegisterPeer(endpoint, uuid, port);
+            var maildboxEndpoint = new IPEndPoint(endpoint.Address, port);
+            RegisterPeer(maildboxEndpoint, uuid);
         }
 
         /// <summary>
         /// Registers the mailbox.
         /// </summary>
-        /// <param name="endpoint">The endpoint.</param>
+        /// <param name="endpoint">The endpoint address.</param>
         /// <param name="uuid">The UUID.</param>
-        /// <param name="remoteMailboxPort">The remote mailbox port.</param>
-        private void RegisterPeer(IPEndPoint endpoint, Guid uuid, ushort remoteMailboxPort)
+        private void RegisterPeer(IPEndPoint endpoint, Guid uuid)
         {
-            Debug.WriteLine("Registering service {0} at mailbox {1} on {2}.", uuid, remoteMailboxPort, endpoint.Address);
+            try
+            {
+                var endpointAddress = String.Format("tcp://{0}:{1}", endpoint.Address, endpoint.Port);
+                Debug.WriteLine("Registering service {0} at mailbox {1}.", uuid, endpointAddress);
+
+                // Create the dealer
+                var context = _context;
+                if (context == null) return;
+                var dealer = context.CreateSocket(SocketType.DEALER);
+                dealer.Identity = uuid.ToByteArray();
+                // TODO: dealer.ReceiveHighWatermark = x
+                // TODO: dealer.SendHighWatermark = x
+                // TODO: dealer.SendTimeout = x
+                // TODO: dealer.ReceiveTimeout = x
+
+                // Check the peers dictionary
+                var peers = _peers;
+                if (peers == null) return;
+
+                // Register and connect the dealer
+                var node = new Node(endpointAddress, dealer);
+                _peers.TryAdd(uuid, node);
+                dealer.Connect(endpointAddress);
+            }
+            catch (Exception e)
+            {
+                Trace.TraceError("An error occured during peer registration: {0}", e.Message);
+                return;
+            }
+
+            // Send event
+            OnPeerDiscovered(new PeerEventArgs(uuid));
+
+            // Send dummy data ...
+            // TODO: Send Frames instead?
+            SendMessage(uuid, new byte[] {1, 2, 3, 4});
+        }
+
+        /// <summary>
+        /// Disconnects a peer
+        /// </summary>
+        /// <param name="uuid">The peer's GUID</param>
+        public void DisconnectPeer(Guid uuid)
+        {
+            try
+            {
+                Node node;
+                if (!_peers.TryRemove(uuid, out node)) return;
+
+                var endpoint = node.Endpoint;
+                var socket = node.DealerSocket;
+
+                // disconnect
+                socket.Disconnect(endpoint);
+                socket.Close();
+                socket.Dispose();
+
+                // send event
+                OnPeerDisconnected(new PeerEventArgs(uuid));
+            }
+            catch (ObjectDisposedException) {}
+        }
+
+        /// <summary>
+        /// Sends a message to a peer
+        /// </summary>
+        /// <param name="uuid">The peer's UUID</param>
+        /// <param name="payload">The datagram to send</param>
+        /// <returns><see langword="true"/> in case of success; <see langword="false"/> otherwise</returns>
+        public bool SendMessage(Guid uuid, byte[] payload)
+        {
+            Node node;
+            if (!_peers.TryGetValue(uuid, out node)) return false;
+
+            // send the datagram
+            var socket = node.DealerSocket;
+            socket.Send(payload, payload.Length, SocketFlags.None); 
+            // TODO: check result
+            // TODO: What about DontWait?
+
+            return true;
         }
 
         /// <summary>
@@ -293,7 +437,7 @@ namespace Intercom.Discovery
             // Beacon erzeugen
             using (MemoryStream stream = new MemoryStream())
             {
-                stream.Write(header, 0, header.Length);
+                stream.Write(header, 0, header.Length); 
                 stream.Write(uuidBytes, 0, uuidBytes.Length);
                 stream.Write(routerPortBytes, 0, routerPortBytes.Length);
                 var beacon = stream.ToArray();
@@ -326,16 +470,21 @@ namespace Intercom.Discovery
         /// <param name="ar"></param>
         private void EndBroadcastBeacon(IAsyncResult ar)
         {
-            var state = ar.AsyncState as UdpState;
-            Debug.Assert(state != null);
+            try
+            {
+                var state = ar.AsyncState as UdpState;
+                Debug.Assert(state != null);
 
-            // Sender ermitteln
-            var sender = state.Client;
-            Debug.Assert(sender != null);
-            if (!sender.Client.IsBound) return;
+                // Sender ermitteln
+                var sender = state.Client;
+                if (sender.Client == null) return;
+                if (!sender.Client.IsBound) return;
 
-            // Senden beenden
-            sender.EndSend(ar);
+                // Senden beenden
+                sender.EndSend(ar);
+            }
+            catch (ObjectDisposedException) { }
+            catch (SocketException) { }
         }
 
         /// <summary>
@@ -352,16 +501,15 @@ namespace Intercom.Discovery
         /// <param name="disposing"><c>true</c> to release both managed and unmanaged resources; <c>false</c> to release only unmanaged resources.</param>
         private void Dispose(bool disposing)
         {
-            if (!Disposed)
-            {
-                if (disposing)
-                {
-                    StopInternal();
-                }
+            if (Disposed) return;
 
-                Disposed = true;
-                GC.SuppressFinalize(this);
+            if (disposing)
+            {
+                StopInternal();
             }
+
+            Disposed = true;
+            GC.SuppressFinalize(this);
         }
 
         /// <summary>
@@ -371,6 +519,32 @@ namespace Intercom.Discovery
         public void Dispose()
         {
             Dispose(true);
+        }
+
+        /// <summary>
+        /// Raises the <see cref="PeerDiscovered"/> event.
+        /// </summary>
+        /// <param name="e">The <see cref="Intercom.Discovery.PeerEventArgs"/> instance containing the event data.</param>
+        private void OnPeerDiscovered(PeerEventArgs e)
+        {
+            EventHandler<PeerEventArgs> handler = PeerDiscovered;
+            if (handler != null)
+            {
+                handler(this, e);
+            }
+        }
+
+        /// <summary>
+        /// Raises the <see cref="PeerDisconnected"/> event.
+        /// </summary>
+        /// <param name="e">The <see cref="Intercom.Discovery.PeerEventArgs"/> instance containing the event data.</param>
+        private void OnPeerDisconnected(PeerEventArgs e)
+        {
+            EventHandler<PeerEventArgs> handler = PeerDisconnected;
+            if (handler != null)
+            {
+                handler(this, e);
+            }
         }
 
         /// <summary>
@@ -395,6 +569,31 @@ namespace Intercom.Discovery
             {
                 EndPoint = endPoint;
                 Client = client;
+            }
+        }
+
+        /// <summary>
+        /// A remote node
+        /// </summary>
+        private struct Node
+        {
+            /// <summary>
+            /// The remote Endpoint
+            /// </summary>
+            public readonly string Endpoint;
+            
+            /// <summary>
+            /// The dealer socket
+            /// </summary>
+            public readonly ZmqSocket DealerSocket;
+
+            /// <summary>
+            /// Initializes a new instance of the <see cref="T:System.Object"/> class.
+            /// </summary>
+            public Node(string endpoint, ZmqSocket dealerSocket)
+            {
+                Endpoint = endpoint;
+                DealerSocket = dealerSocket;
             }
         }
     }

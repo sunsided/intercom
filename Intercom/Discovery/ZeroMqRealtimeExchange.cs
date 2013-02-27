@@ -642,12 +642,12 @@ namespace Intercom.Discovery
             /// <summary>
             /// The router socket
             /// </summary>
-            public ZmqSocket RouterSocket;
+            public readonly ZmqSocket RouterSocket;
 
             /// <summary>
             /// The cancellation token
             /// </summary>
-            public CancellationToken CancellationToken;
+            public readonly CancellationToken CancellationToken;
 
             /// <summary>
             /// Initializes a new instance of the <see cref="ConsumerTaskState"/> struct.

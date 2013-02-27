@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Concurrent;
+using System.Collections.Generic;
 using System.Diagnostics;
 using System.Globalization;
 using System.IO;
@@ -746,7 +747,7 @@ namespace Intercom.Discovery
         /// <summary>
         /// A remote node
         /// </summary>
-        private struct Node
+        private sealed class Node
         {
             /// <summary>
             /// The remote Endpoint
@@ -759,12 +760,64 @@ namespace Intercom.Discovery
             public readonly ZmqSocket DealerSocket;
 
             /// <summary>
+            /// The group dictionary
+            /// </summary>
+            private readonly ConcurrentDictionary<string, int> _groups = new ConcurrentDictionary<string, int>();
+
+            /// <summary>
             /// Initializes a new instance of the <see cref="T:System.Object"/> class.
             /// </summary>
             public Node(string endpoint, ZmqSocket dealerSocket)
             {
                 Endpoint = endpoint;
                 DealerSocket = dealerSocket;
+            }
+
+            /// <summary>
+            /// Gets the number of groups the peer is in.
+            /// </summary>
+            public int GroupCount
+            {
+                get { return _groups.Count; }
+            }
+
+            /// <summary>
+            /// Enumerates the groups the peer is in.
+            /// </summary>
+            public IEnumerable<string> Groups
+            {
+                get { return _groups.Select(@group => @group.Key); }
+            }
+
+            /// <summary>
+            /// Join a group
+            /// </summary>
+            /// <param name="group">The group to join</param>
+            /// <param name="statusSequence">The status sequence</param>
+            public void JoinGroup(string group, int statusSequence)
+            {
+                int sequence = _groups.AddOrUpdate(group, s => statusSequence, (s, i) => i + 1);
+                if (statusSequence != sequence + 1)
+                {
+                    Trace.TraceWarning("Group status sequence diverging after JOIN.");
+                }
+            }
+
+            /// <summary>
+            /// Leave a group
+            /// </summary>
+            /// <param name="group">The group to leave</param>
+            /// <param name="statusSequence">The status sequence</param>
+            public void LeaveGroup(string group, int statusSequence)
+            {
+                int sequence;
+                if (_groups.TryRemove(group, out sequence))
+                {
+                    if (statusSequence != sequence + 1)
+                    {
+                        Trace.TraceWarning("Group status sequence diverging after LEAVE.");
+                    }
+                }
             }
         }
 

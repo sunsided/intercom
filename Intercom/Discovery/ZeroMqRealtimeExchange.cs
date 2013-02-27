@@ -584,6 +584,8 @@ namespace Intercom.Discovery
             }
         }
 
+        #region Internal state variables
+
         /// <summary>
         /// UDP-State für asynchrone Verarbeitung
         /// </summary>
@@ -660,5 +662,7 @@ namespace Intercom.Discovery
                 CancellationToken = cancellationToken;
             }
         }
+
+        #endregion Internal state variables
     }
 }

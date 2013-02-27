@@ -212,12 +212,12 @@ namespace Intercom.Discovery
                 var peers = _peers;
                 if (peers != null)
                 {
-                    _peers = null;
                     foreach (var kvp in peers)
                     {
                         DisconnectPeer(kvp.Key);
                     }
                     peers.Clear();
+                    _peers = null;
                 }
 
                 // Lose context
@@ -376,8 +376,11 @@ namespace Intercom.Discovery
         {
             try
             {
+                var peers = _peers;
+                if (peers == null) return;
+
                 Node node;
-                if (!_peers.TryRemove(uuid, out node)) return;
+                if (!peers.TryRemove(uuid, out node)) return;
 
                 var endpoint = node.Endpoint;
                 var socket = node.DealerSocket;

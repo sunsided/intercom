@@ -429,13 +429,8 @@ namespace Intercom.Discovery
                 Node node;
                 if (!peers.TryRemove(uuid, out node)) return;
 
-                var endpoint = node.Endpoint;
-                var socket = node.DealerSocket;
-
                 // disconnect
-                socket.Disconnect(endpoint);
-                socket.Close();
-                socket.Dispose();
+                node.Disconnect();
 
                 // send event
                 OnPeerDisconnected(new PeerEventArgs(uuid));
@@ -455,12 +450,10 @@ namespace Intercom.Discovery
             if (!_peers.TryGetValue(uuid, out node)) return false;
 
             // create the datagram
-            var message = new ZmqMessage();
-            message.Append(new Frame(payload));
+            var frame = new Frame(payload);
 
             // send the datagram
-            var socket = node.DealerSocket;
-            SendStatus status = socket.SendMessage(message);
+            SendStatus status = node.SendFrame(frame);
             // TODO: check result
             // TODO: What about DontWait?
 
@@ -747,17 +740,33 @@ namespace Intercom.Discovery
         /// <summary>
         /// A remote node
         /// </summary>
-        private sealed class Node
+        private sealed class Node : IDisposable
         {
+            /// <summary>
+            /// Gets or sets a value indicating whether this <see cref="Node"/> is disposed.
+            /// </summary>
+            /// <value>
+            ///   <c>true</c> if disposed; otherwise, <c>false</c>.
+            /// </value>
+            public bool Disposed { get; private set; }
+
+            /// <summary>
+            /// Gets a value indicating whether this instance is connected.
+            /// </summary>
+            /// <value>
+            /// 	<c>true</c> if this instance is connected; otherwise, <c>false</c>.
+            /// </value>
+            public bool IsConnected { get { return _lastSeen.IsRunning; } }
+
             /// <summary>
             /// The remote Endpoint
             /// </summary>
-            public readonly string Endpoint;
+            private readonly string _endpoint;
             
             /// <summary>
             /// The dealer socket
             /// </summary>
-            public readonly ZmqSocket DealerSocket;
+            private readonly ZmqSocket _dealerSocket;
 
             /// <summary>
             /// The group dictionary
@@ -783,8 +792,43 @@ namespace Intercom.Discovery
             /// </summary>
             public Node(string endpoint, ZmqSocket dealerSocket)
             {
-                Endpoint = endpoint;
-                DealerSocket = dealerSocket;
+                _endpoint = endpoint;
+                _dealerSocket = dealerSocket;
+            }
+
+            /// <summary>
+            /// Sends a frame to the peer.
+            /// </summary>
+            /// <param name="frame">The frame.</param>
+            /// <param name="timeout">The timeout.</param>
+            /// <returns></returns>
+            public SendStatus SendFrame(Frame frame, TimeSpan? timeout = null)
+            {
+                try
+                {
+                    return IsConnected
+                               ? _dealerSocket.SendFrame(frame, timeout ?? TimeSpan.MaxValue)
+                               : SendStatus.None;
+                }
+                catch(ObjectDisposedException)
+                {
+                    return SendStatus.None;
+                }
+            }
+
+            /// <summary>
+            /// Disconnects this instance.
+            /// </summary>
+            public void Disconnect()
+            {
+                if (_lastSeen.IsRunning)
+                {
+                    _lastSeen.Stop();
+
+                    _dealerSocket.Disconnect(_endpoint);
+                    _dealerSocket.Close();
+                    _dealerSocket.Dispose();
+                }
             }
 
             /// <summary>
@@ -841,6 +885,17 @@ namespace Intercom.Discovery
                         Trace.TraceWarning("Group status sequence diverging after LEAVE.");
                     }
                 }
+            }
+
+            /// <summary>
+            /// Performs application-defined tasks associated with freeing, releasing, or resetting unmanaged resources.
+            /// </summary>
+            /// <filterpriority>2</filterpriority>
+            void IDisposable.Dispose()
+            {
+                if (Disposed) return;
+                Disconnect();
+                Disposed = true;
             }
         }
 

@@ -119,6 +119,21 @@ namespace Intercom.Discovery
         private readonly IPAddress _multicastIp = IPAddress.Parse("224.0.0.0");
 
         /// <summary>
+        /// Task zur Mailbox-Verarbeitung
+        /// </summary>
+        private Task _mailboxProcessTask;
+
+        /// <summary>
+        /// The mailbox inbound queue
+        /// </summary>
+        private ConcurrentQueue<ZmqMessage> _mailboxMessageQueue;
+
+        /// <summary>
+        /// Signals that data is available in the inbound queue
+        /// </summary>
+        private AutoResetEvent _dataAvailable;
+
+        /// <summary>
         /// Initializes a new instance of the <see cref="ZeroMqRealtimeExchange"/> class.
         /// </summary>
         /// <param name="uuid">The UUID.</param>
@@ -139,6 +154,8 @@ namespace Intercom.Discovery
             // Prepare peer asynchronous operation
             _cancellationTokenSource = new CancellationTokenSource();
             _peers = new ConcurrentDictionary<Guid, Node>();
+            _mailboxMessageQueue = new ConcurrentQueue<ZmqMessage>();
+            _dataAvailable = new AutoResetEvent(false);
 
             // Create the context
             _context = ZmqContext.Create();
@@ -157,7 +174,8 @@ namespace Intercom.Discovery
             }
 
             // Start mailbox processing task
-            _mailboxPollTask = Task.Factory.StartNew(PollMailbox, new ConsumerTaskState(_mailbox, _cancellationTokenSource.Token));
+            _mailboxPollTask = Task.Factory.StartNew(MailboxPollTask, new ConsumerTaskState(_mailbox, _cancellationTokenSource.Token, _dataAvailable, _mailboxMessageQueue), TaskCreationOptions.LongRunning);
+            _mailboxProcessTask = Task.Factory.StartNew(MailboxProcessTask, new ConsumerTaskState(null, _cancellationTokenSource.Token, _dataAvailable, _mailboxMessageQueue), TaskCreationOptions.LongRunning);
 
             // Beacon generieren
             _beacon = CreateVersion1Beacon(_uuid, _mailboxPort);
@@ -182,11 +200,18 @@ namespace Intercom.Discovery
         /// <summary>
         /// Polls the mailbox
         /// </summary>
-        private void PollMailbox(object state)
+        private static void MailboxPollTask(object state)
         {
             var cts = (ConsumerTaskState)state;
             var cancellationToken = cts.CancellationToken;
             var socket = cts.RouterSocket;
+            var signal = cts.Signal;
+            var queue = cts.Queue;
+
+            if (String.IsNullOrWhiteSpace(Thread.CurrentThread.Name))
+            {
+                Thread.CurrentThread.Name = "ZRE Mailbox Receiver";
+            }
 
             TimeSpan timeout = TimeSpan.FromSeconds(1);
             while (!cancellationToken.IsCancellationRequested)
@@ -200,9 +225,43 @@ namespace Intercom.Discovery
                     }
 
                     // TODO: Handle interrupted (partial) messages.
+
+                    // Enqueue message and wake up consumer
+                    Debug.Assert(message != null, "ZeroMQ message was null after ReceiveMessage()");
+                    queue.Enqueue(message);
+                    signal.Set();
                 }
                 catch (ObjectDisposedException) { }
                 catch (SocketException) { }
+            }
+        }
+
+        /// <summary>
+        /// Processes mailbox events
+        /// </summary>
+        /// <param name="state"></param>
+        private static void MailboxProcessTask(object state)
+        {
+            var cts = (ConsumerTaskState)state;
+            var cancellationToken = cts.CancellationToken;
+            var signal = cts.Signal;
+            var queue = cts.Queue;
+
+            if (String.IsNullOrWhiteSpace(Thread.CurrentThread.Name))
+            {
+                Thread.CurrentThread.Name = "ZRE Mailbox Message Processing";
+            }
+
+            while (!cancellationToken.IsCancellationRequested)
+            {
+                ZmqMessage message;
+                while (queue.TryDequeue(out message))
+                {
+                    // process message
+                }
+
+                // sleep
+                signal.WaitOne();
             }
         }
 
@@ -525,9 +584,45 @@ namespace Intercom.Discovery
         {
             try
             {
-                // Stoppity stop
-                _cancellationTokenSource.Cancel();
-                _mailboxPollTask.Wait(TimeSpan.FromSeconds(5));
+                // Signal stop and wake up consumer
+                if (_cancellationTokenSource != null)
+                {
+                    _cancellationTokenSource.Cancel();
+                }
+                if (_dataAvailable != null)
+                {
+                    _dataAvailable.Set();
+                }
+
+                // Release poll task
+                if (_mailboxPollTask != null)
+                {
+                    _mailboxPollTask.Wait(TimeSpan.FromSeconds(5));
+                    _mailboxPollTask.Dispose();
+                    _mailboxPollTask = null;
+                }
+
+                // Release poll task
+                if (_mailboxProcessTask != null)
+                {
+                    _mailboxProcessTask.Wait(TimeSpan.FromSeconds(5));
+                    _mailboxProcessTask.Dispose();
+                    _mailboxProcessTask = null;
+                }
+
+                // Release signal
+                if (_dataAvailable != null)
+                {
+                    _dataAvailable.Dispose();
+                    _dataAvailable = null;
+                }
+
+                // Release token source
+                if (_cancellationTokenSource != null)
+                {
+                    _cancellationTokenSource.Dispose();
+                    _cancellationTokenSource = null;
+                }
 
                 // Release the Kraken
                 _beacon = null;
@@ -553,7 +648,7 @@ namespace Intercom.Discovery
                     _mailbox.Dispose();
                     _mailbox = null;
                 }
-
+                
                 // Release peers
                 {
                     var peers = _peers;
@@ -566,6 +661,14 @@ namespace Intercom.Discovery
                         peers.Clear();
                         _peers = null;
                     }
+                }
+
+                // Release inbound queue
+                if (_mailboxMessageQueue != null)
+                {
+                    ZmqMessage discarded;
+                    while (_mailboxMessageQueue.TryDequeue(out discarded)) {}
+                    _mailboxMessageQueue = null;
                 }
 
                 // Lose context
@@ -672,6 +775,11 @@ namespace Intercom.Discovery
         private struct ConsumerTaskState
         {
             /// <summary>
+            /// The message queue
+            /// </summary>
+            public ConcurrentQueue<ZmqMessage> Queue;
+
+            /// <summary>
             /// The router socket
             /// </summary>
             public readonly ZmqSocket RouterSocket;
@@ -682,14 +790,22 @@ namespace Intercom.Discovery
             public readonly CancellationToken CancellationToken;
 
             /// <summary>
+            /// The signal to notify new inbound data
+            /// </summary>
+            public readonly AutoResetEvent Signal;
+
+            /// <summary>
             /// Initializes a new instance of the <see cref="ConsumerTaskState"/> struct.
             /// </summary>
             /// <param name="routerSocket">The router socket.</param>
             /// <param name="cancellationToken">The cancellation token.</param>
-            public ConsumerTaskState(ZmqSocket routerSocket, CancellationToken cancellationToken)
+            /// <param name="signal">The signal.</param>
+            public ConsumerTaskState(ZmqSocket routerSocket, CancellationToken cancellationToken, AutoResetEvent signal, ConcurrentQueue<ZmqMessage> queue)
             {
+                Queue = queue;
                 RouterSocket = routerSocket;
                 CancellationToken = cancellationToken;
+                Signal = signal;
             }
         }
 

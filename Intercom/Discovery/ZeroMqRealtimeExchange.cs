@@ -159,7 +159,9 @@ namespace Intercom.Discovery
 
             // UPD receiver erzeugen
             var receiveIp = new IPEndPoint(IPAddress.Any, _zreBroadcastPort);
-            _broadcastReceiver = new UdpClient(receiveIp);
+            _broadcastReceiver = new UdpClient();
+            _broadcastReceiver.Client.SetSocketOption(SocketOptionLevel.Socket, SocketOptionName.ReuseAddress, 1);
+            _broadcastReceiver.Client.Bind(receiveIp);
             StartReceiveBroadcast(_broadcastReceiver);
 
             // UDP sender erzeugen

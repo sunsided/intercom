@@ -276,18 +276,7 @@ namespace Intercom.Discovery
             if (sentHeader != version1Header) return;
 
             // UUID parsen
-            int a = BitConverter.ToInt32(payload, 4);
-            short b = BitConverter.ToInt16(payload, 8);
-            short c = BitConverter.ToInt16(payload, 10);
-            byte d = payload[12],
-                 e = payload[13],
-                 f = payload[14],
-                 g = payload[15],
-                 h = payload[16],
-                 i = payload[17],
-                 j = payload[18],
-                 k = payload[19];
-            var uuid = new Guid(a, b, c, d, e, f, g, h, i, j, k);
+            var uuid = ParseGuidFromBytes(payload, 4);
             if (uuid == _uuid) return;
             
             // Port beziehen
@@ -296,6 +285,31 @@ namespace Intercom.Discovery
             // Mailbox registrieren
             var maildboxEndpoint = new IPEndPoint(endpoint.Address, port);
             RegisterPeer(maildboxEndpoint, uuid);
+        }
+
+        /// <summary>
+        /// Parses an UUID from a byte sequence
+        /// </summary>
+        /// <param name="payload">The payload.</param>
+        /// <param name="startIndex">The start index.</param>
+        /// <returns></returns>
+        private static Guid ParseGuidFromBytes(byte[] payload, int startIndex)
+        {
+            if (payload == null) throw new ArgumentNullException("payload");
+            if (payload.Length - startIndex < 16) throw new ArgumentException("Payload must be at least 16 bytes long");
+
+            int a = BitConverter.ToInt32(payload, startIndex);
+            short b = BitConverter.ToInt16(payload, startIndex + 4 );
+            short c = BitConverter.ToInt16(payload, startIndex + 6);
+            byte d = payload[startIndex + 8 ],
+                 e = payload[startIndex + 9],
+                 f = payload[startIndex + 10],
+                 g = payload[startIndex + 11],
+                 h = payload[startIndex + 12],
+                 i = payload[startIndex + 13],
+                 j = payload[startIndex + 14],
+                 k = payload[startIndex + 15];
+            return new Guid(a, b, c, d, e, f, g, h, i, j, k);
         }
 
         /// <summary>

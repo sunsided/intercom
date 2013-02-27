@@ -7,6 +7,7 @@ using System.Linq;
 using System.Net;
 using System.Net.Sockets;
 using System.Threading;
+using System.Threading.Tasks;
 using ZeroMQ;
 using SocketFlags = ZeroMQ.SocketFlags;
 using SocketType = ZeroMQ.SocketType;
@@ -106,7 +107,12 @@ namespace Intercom.Discovery
         /// Occurs when a peer was disconnected.
         /// </summary>
         public event EventHandler<PeerEventArgs> PeerDisconnected;
-        
+
+        /// <summary>
+        /// The task used to poll the mailbox
+        /// </summary>
+        private Task _mailboxPollTask;
+
         /// <summary>
         /// Initializes a new instance of the <see cref="ZeroMqRealtimeExchange"/> class.
         /// </summary>
@@ -137,6 +143,7 @@ namespace Intercom.Discovery
             _mailbox.Bind("tcp://*:*");
             
             // TODO: Start mailbox processing task
+            _mailboxPollTask = new Task(PollMailbox, _mailbox, _cancellationTokenSource.Token);
 
             // Port ermitteln
             var port = _mailbox.LastEndpoint.Split(':').Last();
@@ -162,7 +169,16 @@ namespace Intercom.Discovery
             Started = true;
             return true;
         }
-        
+
+        /// <summary>
+        /// Polls the mailbox
+        /// </summary>
+        private void PollMailbox(object state)
+        {
+            var mailbox = (ZmqSocket) state;
+            while (true) ;
+        }
+
         /// <summary>
         /// Stops this instance.
         /// </summary>

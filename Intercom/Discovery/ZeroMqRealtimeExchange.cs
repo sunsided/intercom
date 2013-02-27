@@ -158,7 +158,7 @@ namespace Intercom.Discovery
             _beacon = CreateVersion1Beacon(_uuid, _mailboxPort);
 
             // UPD receiver erzeugen
-            IPEndPoint receiveIp = new IPEndPoint(IPAddress.Any, _zreBroadcastPort);
+            var receiveIp = new IPEndPoint(IPAddress.Any, _zreBroadcastPort);
             _broadcastReceiver = new UdpClient(receiveIp);
             StartReceiveBroadcast(_broadcastReceiver);
 
@@ -331,7 +331,7 @@ namespace Intercom.Discovery
             if (uuid == _uuid) return;
             
             // Port beziehen
-            ushort port = (ushort)IPAddress.NetworkToHostOrder(BitConverter.ToInt16(payload, 20));
+            var port = (ushort)IPAddress.NetworkToHostOrder(BitConverter.ToInt16(payload, 20));
 
             // Mailbox registrieren
             var maildboxEndpoint = new IPEndPoint(endpoint.Address, port);

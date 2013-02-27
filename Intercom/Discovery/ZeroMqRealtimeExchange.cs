@@ -765,12 +765,35 @@ namespace Intercom.Discovery
             private readonly ConcurrentDictionary<string, int> _groups = new ConcurrentDictionary<string, int>();
 
             /// <summary>
+            /// Information about when the peer was last seen on the network
+            /// </summary>
+            private readonly Stopwatch _lastSeen = Stopwatch.StartNew();
+
+            /// <summary>
+            /// Gets the duration since the peer was last seen on the network.
+            /// </summary>
+            /// <seealso cref="MarkAlive"/>
+            public TimeSpan TimeSinceLastSeen
+            {
+                get { return _lastSeen.Elapsed; }
+            }
+
+            /// <summary>
             /// Initializes a new instance of the <see cref="T:System.Object"/> class.
             /// </summary>
             public Node(string endpoint, ZmqSocket dealerSocket)
             {
                 Endpoint = endpoint;
                 DealerSocket = dealerSocket;
+            }
+
+            /// <summary>
+            /// Marks this peer as alive.
+            /// </summary>
+            /// <seealso cref="TimeSinceLastSeen"/>
+            public void MarkAlive()
+            {
+                _lastSeen.Restart();
             }
 
             /// <summary>

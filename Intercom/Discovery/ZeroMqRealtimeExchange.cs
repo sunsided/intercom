@@ -142,9 +142,6 @@ namespace Intercom.Discovery
             _mailbox = _context.CreateSocket(SocketType.ROUTER);
             _mailbox.Bind("tcp://*:*");
             
-            // TODO: Start mailbox processing task
-            _mailboxPollTask = new Task(PollMailbox, _mailbox, _cancellationTokenSource.Token);
-
             // Port ermitteln
             var port = _mailbox.LastEndpoint.Split(':').Last();
             if (!UInt16.TryParse(port, NumberStyles.Integer, CultureInfo.InvariantCulture, out _mailboxPort))
@@ -153,6 +150,9 @@ namespace Intercom.Discovery
                 StopInternal();
                 return false;
             }
+
+            // Start mailbox processing task
+            _mailboxPollTask = Task.Factory.StartNew(PollMailbox, new ConsumerTaskState(_mailbox, _cancellationTokenSource.Token));
 
             // Beacon generieren
             _beacon = CreateVersion1Beacon(_uuid, _mailboxPort);
@@ -175,8 +175,23 @@ namespace Intercom.Discovery
         /// </summary>
         private void PollMailbox(object state)
         {
-            var mailbox = (ZmqSocket) state;
-            while (true) ;
+            var cts = (ConsumerTaskState)state;
+            var cancellationToken = cts.CancellationToken;
+            var socket = cts.RouterSocket;
+
+            TimeSpan timeout = TimeSpan.FromSeconds(1);
+            while (!cancellationToken.IsCancellationRequested)
+            {
+                try 
+                {
+                    Frame frame = socket.ReceiveFrame(timeout);
+                    if (frame.ReceiveStatus == ReceiveStatus.TryAgain) continue;
+
+                    // TODO: While more frames, loop
+                }
+                catch (ObjectDisposedException) { }
+                catch (SocketException) { }
+            }
         }
 
         /// <summary>
@@ -197,6 +212,7 @@ namespace Intercom.Discovery
             {
                 // Stoppity stop
                 _cancellationTokenSource.Cancel();
+                _mailboxPollTask.Wait(TimeSpan.FromSeconds(5));
 
                 // Release the Kraken
                 _beacon = null;
@@ -422,9 +438,12 @@ namespace Intercom.Discovery
             Node node;
             if (!_peers.TryGetValue(uuid, out node)) return false;
 
+            // create the datagram
+            var frame = new Frame(payload);
+
             // send the datagram
             var socket = node.DealerSocket;
-            socket.Send(payload, payload.Length, SocketFlags.None); 
+            SendStatus status = socket.SendFrame(frame, TimeSpan.FromSeconds(0.1)); 
             // TODO: check result
             // TODO: What about DontWait?
 
@@ -612,6 +631,33 @@ namespace Intercom.Discovery
             {
                 Endpoint = endpoint;
                 DealerSocket = dealerSocket;
+            }
+        }
+
+        /// <summary>
+        /// State for the consumer task
+        /// </summary>
+        private struct ConsumerTaskState
+        {
+            /// <summary>
+            /// The router socket
+            /// </summary>
+            public ZmqSocket RouterSocket;
+
+            /// <summary>
+            /// The cancellation token
+            /// </summary>
+            public CancellationToken CancellationToken;
+
+            /// <summary>
+            /// Initializes a new instance of the <see cref="ConsumerTaskState"/> struct.
+            /// </summary>
+            /// <param name="routerSocket">The router socket.</param>
+            /// <param name="cancellationToken">The cancellation token.</param>
+            public ConsumerTaskState(ZmqSocket routerSocket, CancellationToken cancellationToken)
+            {
+                RouterSocket = routerSocket;
+                CancellationToken = cancellationToken;
             }
         }
     }

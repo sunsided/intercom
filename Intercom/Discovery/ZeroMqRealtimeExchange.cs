@@ -528,15 +528,17 @@ namespace Intercom.Discovery
                 }
 
                 // Release peers
-                var peers = _peers;
-                if (peers != null)
                 {
-                    foreach (var kvp in peers)
+                    var peers = _peers;
+                    if (peers != null)
                     {
-                        DisconnectPeer(kvp.Key);
+                        foreach (var kvp in peers)
+                        {
+                            DisconnectPeer(kvp.Key);
+                        }
+                        peers.Clear();
+                        _peers = null;
                     }
-                    peers.Clear();
-                    _peers = null;
                 }
 
                 // Lose context

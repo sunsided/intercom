@@ -134,6 +134,19 @@ namespace Intercom.Discovery
         private AutoResetEvent _dataAvailable;
 
         /// <summary>
+        /// Tracks the time since the last beacon broadcast
+        /// </summary>
+        private Stopwatch _timeSinceBeaconBroadcast;
+
+        /// <summary>
+        /// Gets the time since the last beacon broadcast
+        /// </summary>
+        public TimeSpan TimeSinceBeaconBroadcast
+        {
+            get { return _timeSinceBeaconBroadcast != null ? _timeSinceBeaconBroadcast.Elapsed : TimeSpan.MaxValue; }
+        }
+
+        /// <summary>
         /// Initializes a new instance of the <see cref="ZeroMqRealtimeExchange"/> class.
         /// </summary>
         /// <param name="uuid">The UUID.</param>
@@ -150,6 +163,9 @@ namespace Intercom.Discovery
         public bool Start()
         {
             if (Started) return true;
+
+            // Prepare the time tracking
+            _timeSinceBeaconBroadcast = new Stopwatch();
 
             // Prepare peer asynchronous operation
             _cancellationTokenSource = new CancellationTokenSource();
@@ -530,6 +546,10 @@ namespace Intercom.Discovery
 
                 // Senden beenden
                 sender.EndSend(ar);
+
+                // Notify
+                var tracker = _timeSinceBeaconBroadcast;
+                if (tracker != null) tracker.Restart();
             }
             catch (ObjectDisposedException) { }
             catch (SocketException) { }
@@ -619,6 +639,7 @@ namespace Intercom.Discovery
 
                 // Release the Kraken
                 _beacon = null;
+                _timeSinceBeaconBroadcast = null;
 
                 // Release broadcast sender
                 if (_broadcastSender != null)

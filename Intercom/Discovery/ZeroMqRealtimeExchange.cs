@@ -156,8 +156,7 @@ namespace Intercom.Discovery
             StartReceiveBroadcast(_broadcastReceiver);
 
             // UDP sender erzeugen
-            IPEndPoint broadcastIp = new IPEndPoint(IPAddress.Broadcast, _zreBroadcastPort);
-            _broadcastSender = new UdpClient(broadcastIp);
+            _broadcastSender = new UdpClient();
 
             // Oink
             Started = true;

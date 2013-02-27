@@ -9,7 +9,6 @@ using System.Net.Sockets;
 using System.Threading;
 using System.Threading.Tasks;
 using ZeroMQ;
-using SocketFlags = ZeroMQ.SocketFlags;
 using SocketType = ZeroMQ.SocketType;
 
 namespace Intercom.Discovery
@@ -777,7 +776,7 @@ namespace Intercom.Discovery
             /// <summary>
             /// The message queue
             /// </summary>
-            public ConcurrentQueue<ZmqMessage> Queue;
+            public readonly ConcurrentQueue<ZmqMessage> Queue;
 
             /// <summary>
             /// The router socket
@@ -800,6 +799,7 @@ namespace Intercom.Discovery
             /// <param name="routerSocket">The router socket.</param>
             /// <param name="cancellationToken">The cancellation token.</param>
             /// <param name="signal">The signal.</param>
+            /// <param name="queue">The queue.</param>
             public ConsumerTaskState(ZmqSocket routerSocket, CancellationToken cancellationToken, AutoResetEvent signal, ConcurrentQueue<ZmqMessage> queue)
             {
                 Queue = queue;

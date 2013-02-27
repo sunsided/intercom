@@ -114,6 +114,11 @@ namespace Intercom.Discovery
         private Task _mailboxPollTask;
 
         /// <summary>
+        /// The multicast IP to be used
+        /// </summary>
+        private readonly IPAddress _multicastIp = IPAddress.Parse("224.0.0.0");
+
+        /// <summary>
         /// Initializes a new instance of the <see cref="ZeroMqRealtimeExchange"/> class.
         /// </summary>
         /// <param name="uuid">The UUID.</param>
@@ -158,10 +163,12 @@ namespace Intercom.Discovery
             _beacon = CreateVersion1Beacon(_uuid, _mailboxPort);
 
             // UPD receiver erzeugen
-            var receiveIp = new IPEndPoint(IPAddress.Any, _zreBroadcastPort);
+            var receiveIp = _multicastIp;
+            var receiveEndpoint = new IPEndPoint(IPAddress.Any, _zreBroadcastPort);
             _broadcastReceiver = new UdpClient();
             _broadcastReceiver.Client.SetSocketOption(SocketOptionLevel.Socket, SocketOptionName.ReuseAddress, 1);
-            _broadcastReceiver.Client.Bind(receiveIp);
+            _broadcastReceiver.JoinMulticastGroup(receiveIp); // TODO: Allow multiple multicast IPs (224.0.0.0 .. 239.255.255.255)
+            _broadcastReceiver.Client.Bind(receiveEndpoint);
             StartReceiveBroadcast(_broadcastReceiver);
 
             // UDP sender erzeugen
@@ -430,9 +437,10 @@ namespace Intercom.Discovery
             if (beacon == null) return;
 
             // Daten senden
-            IPEndPoint broadcastIp = new IPEndPoint(IPAddress.Broadcast, _zreBroadcastPort);
-            UdpState state = new UdpState(broadcastIp, sender);
-            sender.BeginSend(beacon, beacon.Length, broadcastIp, EndBroadcastBeacon, state);
+            var multicastIp = _multicastIp;
+            var multicastEndpoint = new IPEndPoint(multicastIp, _zreBroadcastPort);
+            var state = new UdpState(multicastEndpoint, sender);
+            sender.BeginSend(beacon, beacon.Length, multicastEndpoint, EndBroadcastBeacon, state);
         }
 
         /// <summary>

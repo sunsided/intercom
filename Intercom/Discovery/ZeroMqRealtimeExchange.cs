@@ -202,74 +202,6 @@ namespace Intercom.Discovery
             if (!Started) return;
             StopInternal();
         }
-
-        /// <summary>
-        /// Stops this instance.
-        /// </summary>
-        public void StopInternal()
-        {
-            try
-            {
-                // Stoppity stop
-                _cancellationTokenSource.Cancel();
-                _mailboxPollTask.Wait(TimeSpan.FromSeconds(5));
-
-                // Release the Kraken
-                _beacon = null;
-
-                // Release broadcast sender
-                if (_broadcastSender != null)
-                {
-                    _broadcastSender.Close();
-                    _broadcastSender = null;
-                }
-
-                // Release broadcast receiver
-                if (_broadcastReceiver != null)
-                {
-                    _broadcastReceiver.Close();
-                    _broadcastReceiver = null;
-                }
-
-                // Release mailbox router
-                if (_mailbox != null)
-                {
-                    _mailbox.Close();
-                    _mailbox.Dispose();
-                    _mailbox = null;
-                }
-
-                // Release peers
-                var peers = _peers;
-                if (peers != null)
-                {
-                    foreach (var kvp in peers)
-                    {
-                        DisconnectPeer(kvp.Key);
-                    }
-                    peers.Clear();
-                    _peers = null;
-                }
-
-                // Lose context
-                if (_context != null)
-                {
-                    _context.Terminate();
-                    _context.Dispose();
-                    _context = null;
-                }
-            }
-            catch (Exception e)
-            {
-                Console.Error.WriteLine("An error occured during disposal: {0}", e.Message);
-                throw;
-            }
-            finally
-            {
-                // Oink
-                Started = false;
-            }
-        }
         
         /// <summary>
         /// Beginnt das Horchen auf UDP-Broadcasts
@@ -556,6 +488,75 @@ namespace Intercom.Discovery
         public void Dispose()
         {
             Dispose(true);
+        }
+
+
+        /// <summary>
+        /// Stops this instance.
+        /// </summary>
+        public void StopInternal()
+        {
+            try
+            {
+                // Stoppity stop
+                _cancellationTokenSource.Cancel();
+                _mailboxPollTask.Wait(TimeSpan.FromSeconds(5));
+
+                // Release the Kraken
+                _beacon = null;
+
+                // Release broadcast sender
+                if (_broadcastSender != null)
+                {
+                    _broadcastSender.Close();
+                    _broadcastSender = null;
+                }
+
+                // Release broadcast receiver
+                if (_broadcastReceiver != null)
+                {
+                    _broadcastReceiver.Close();
+                    _broadcastReceiver = null;
+                }
+
+                // Release mailbox router
+                if (_mailbox != null)
+                {
+                    _mailbox.Close();
+                    _mailbox.Dispose();
+                    _mailbox = null;
+                }
+
+                // Release peers
+                var peers = _peers;
+                if (peers != null)
+                {
+                    foreach (var kvp in peers)
+                    {
+                        DisconnectPeer(kvp.Key);
+                    }
+                    peers.Clear();
+                    _peers = null;
+                }
+
+                // Lose context
+                if (_context != null)
+                {
+                    _context.Terminate();
+                    _context.Dispose();
+                    _context = null;
+                }
+            }
+            catch (Exception e)
+            {
+                Console.Error.WriteLine("An error occured during disposal: {0}", e.Message);
+                throw;
+            }
+            finally
+            {
+                // Oink
+                Started = false;
+            }
         }
 
         /// <summary>

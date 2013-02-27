@@ -193,10 +193,13 @@ namespace Intercom.Discovery
             {
                 try 
                 {
-                    Frame frame = socket.ReceiveFrame(timeout);
-                    if (frame.ReceiveStatus == ReceiveStatus.TryAgain) continue;
+                    ZmqMessage message = socket.ReceiveMessage(timeout);
+                    if (socket.ReceiveStatus == ReceiveStatus.TryAgain)
+                    {
+                        continue;
+                    }
 
-                    // TODO: While more frames, loop
+                    // TODO: Handle interrupted (partial) messages.
                 }
                 catch (ObjectDisposedException) { }
                 catch (SocketException) { }
@@ -336,7 +339,6 @@ namespace Intercom.Discovery
             OnPeerDiscovered(new PeerEventArgs(uuid));
 
             // Send dummy data ...
-            // TODO: Send Frames instead?
             SendMessage(uuid, new byte[] {1, 2, 3, 4});
         }
 
@@ -380,11 +382,12 @@ namespace Intercom.Discovery
             if (!_peers.TryGetValue(uuid, out node)) return false;
 
             // create the datagram
-            var frame = new Frame(payload);
+            var message = new ZmqMessage();
+            message.Append(new Frame(payload));
 
             // send the datagram
             var socket = node.DealerSocket;
-            SendStatus status = socket.SendFrame(frame, TimeSpan.FromSeconds(0.1)); 
+            SendStatus status = socket.SendMessage(message);
             // TODO: check result
             // TODO: What about DontWait?
 

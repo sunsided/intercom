@@ -250,6 +250,9 @@ namespace Intercom.Discovery
         /// <param name="uuid">The UUID.</param>
         private void RegisterPeer(IPEndPoint endpoint, Guid uuid)
         {
+            Node node = null;
+            bool success = false;
+
             try
             {
                 var endpointAddress = String.Format("tcp://{0}:{1}", endpoint.Address, endpoint.Port);
@@ -270,18 +273,35 @@ namespace Intercom.Discovery
                 if (peers == null) return;
 
                 // Register and connect the dealer
-                var node = new Node(endpointAddress, dealer);
-                _peers.TryAdd(uuid, node);
+                 node = new Node(endpointAddress, dealer);
+                if (!_peers.TryAdd(uuid, node))
+                {
+                    Trace.TraceWarning("Could not register peer because an entry for the same peer already existed; skipping.");
+                    return;
+                }
                 dealer.Connect(endpointAddress);
+                success = true;
             }
             catch (Exception e)
             {
                 Trace.TraceError("An error occured during peer registration: {0}", e.Message);
-                return;
+                success = false;
+            }
+            finally
+            {
+                // clean up the node (the dealer!) in case of an error
+                if (!success && node != null)
+                {
+                    node.Disconnect();
+                }
             }
 
-            // Send dummy data ...
-            SendMessage(uuid, new byte[] {1, 2, 3, 4});
+            // Send HELLO
+            if (success)
+            {
+                // Send dummy data ...
+                SendMessage(uuid, new byte[] { 1, 2, 3, 4 });
+            }
         }
 
         /// <summary>

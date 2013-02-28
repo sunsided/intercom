@@ -52,6 +52,7 @@
     <Compile Include="Discovery\PeerDiscoveryEventArgs.cs" />
     <Compile Include="Discovery\PeerEventArgs.cs" />
     <Compile Include="Discovery\ZreBeaconBroadcast.cs" />
+    <Compile Include="Discovery\ZreBeaconBroadcastFactory.cs" />
     <Compile Include="Discovery\ZreExtensions.cs" />
     <Compile Include="Discovery\ZreMailbox.cs" />
     <Compile Include="Program.cs" />

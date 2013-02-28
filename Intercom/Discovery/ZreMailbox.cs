@@ -19,6 +19,11 @@ namespace Intercom.Discovery
     sealed class ZreMailbox : IDisposable
     {
         /// <summary>
+        /// Factory used to create beacon broadcast instances
+        /// </summary>
+        private readonly ZreBeaconBroadcastFactory _broadcastFactory;
+
+        /// <summary>
         /// This node's UUID
         /// </summary>
         private readonly Guid _uuid;
@@ -92,9 +97,11 @@ namespace Intercom.Discovery
         /// <summary>
         /// Initializes a new instance of the <see cref="ZreMailbox"/> class.
         /// </summary>
+        /// <param name="broadcastFactory">The broadcast factory.</param>
         /// <param name="uuid">The UUID.</param>
-        public ZreMailbox(Guid? uuid = null)
+        public ZreMailbox(ZreBeaconBroadcastFactory broadcastFactory, Guid? uuid = null)
         {
+            _broadcastFactory = broadcastFactory;
             _uuid = uuid ?? Guid.NewGuid();
         }
 
@@ -132,7 +139,8 @@ namespace Intercom.Discovery
             _mailboxProcessTask = Task.Factory.StartNew(MailboxProcessTask, new ConsumerTaskState(null, _cancellationTokenSource.Token, _dataAvailable, _mailboxMessageQueue), TaskCreationOptions.LongRunning);
 
             // Broadcast erzeugen
-            _broadcast = new ZreBeaconBroadcast(_uuid, _mailboxPort); // TODO: Use a factory
+            Trace.Assert(_broadcastFactory != null);
+            _broadcast = _broadcastFactory.Create(_uuid, _mailboxPort);
             _broadcast.PeerDiscovered += OnBroadcastPeerDiscovered;
             _broadcast.Start();
 

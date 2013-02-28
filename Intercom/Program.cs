@@ -9,7 +9,7 @@ namespace Intercom
     {
         static void Main(string[] args)
         {
-            var factory = new ZreBeaconBroadcastFactory();
+            var factory = new ZreBroadcastFactory();
             using (var zre = new ZreMailbox(factory))
             {
                 // Starten

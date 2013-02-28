@@ -3,19 +3,19 @@
 namespace Intercom.Discovery
 {
     /// <summary>
-    /// Factory that creates <see cref="ZreBeaconBroadcast"/> instances
+    /// Factory that creates <see cref="ZreBroadcast"/> instances
     /// </summary>
-    sealed class ZreBeaconBroadcastFactory : IZreBroadcastFactory
+    sealed class ZreBroadcastFactory : IZreBroadcastFactory
     {
         /// <summary>
-        /// Creates a <see cref="ZreBeaconBroadcast"/> instance.
+        /// Creates a <see cref="ZreBroadcast"/> instance.
         /// </summary>
         /// <param name="uuid">The UUID.</param>
         /// <param name="broadcastPort">The broadcast port.</param>
         /// <returns>The broadcaster</returns>
         public IZreBroadcast Create(Guid uuid, ushort broadcastPort)
         {
-            return new ZreBeaconBroadcast(uuid, broadcastPort);
+            return new ZreBroadcast(uuid, broadcastPort);
         }
     }
 }

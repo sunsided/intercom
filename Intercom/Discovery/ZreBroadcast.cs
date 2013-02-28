@@ -9,7 +9,7 @@ namespace Intercom.Discovery
     /// <summary>
     /// UDP beacon broadcast for ZeroMQ Realtime Exchange as defined in <a href="http://rfc.zeromq.org/spec:20">http://rfc.zeromq.org/spec:20</a>
     /// </summary>
-    sealed class ZreBeaconBroadcast : IDisposable, IZreBroadcast
+    sealed class ZreBroadcast : IDisposable, IZreBroadcast
     {
         /// <summary>
         /// Der Vorgabeport für ZRE-Broadcasts
@@ -91,12 +91,12 @@ namespace Intercom.Discovery
         private readonly IPAddress _multicastIp = IPAddress.Parse("224.0.0.0"); // TODO: Allow multiple multicast IPs OR a single broadcast IP
 
         /// <summary>
-        /// Initializes a new instance of the <see cref="ZreBeaconBroadcast"/> class.
+        /// Initializes a new instance of the <see cref="ZreBroadcast"/> class.
         /// </summary>
         /// <param name="uuid">The UUID.</param>
         /// <param name="mailboxPort">The mailbox port.</param>
         /// <param name="zreBroadcastPort">The ZRE broadcast port.</param>
-        public ZreBeaconBroadcast(Guid uuid, ushort mailboxPort, int zreBroadcastPort = DefaultZreBroadcastPort)
+        public ZreBroadcast(Guid uuid, ushort mailboxPort, int zreBroadcastPort = DefaultZreBroadcastPort)
         {
             _uuid = uuid;
             _mailboxPort = mailboxPort;

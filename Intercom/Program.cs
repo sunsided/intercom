@@ -9,7 +9,7 @@ namespace Intercom
     {
         static void Main(string[] args)
         {
-            using (var zre = new ZeroMqRealtimeExchange())
+            using (var zre = new ZreMailbox())
             {
                 // Starten
                 if (!zre.Start())

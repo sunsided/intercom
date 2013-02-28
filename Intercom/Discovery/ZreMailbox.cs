@@ -17,7 +17,7 @@ namespace Intercom.Discovery
     /// <summary>
     /// Implementierung des ZeroMQ Realtime Exchange-Protokolls, definiert unter <a href="http://rfc.zeromq.org/spec:20">http://rfc.zeromq.org/spec:20</a>
     /// </summary>
-    sealed class ZeroMqRealtimeExchange : IDisposable
+    sealed class ZreMailbox : IDisposable
     {
         /// <summary>
         /// Der Vorgabeport für ZRE-Broadcasts
@@ -73,7 +73,7 @@ namespace Intercom.Discovery
         private ushort _mailboxPort;
 
         /// <summary>
-        /// Gets a value indicating whether this <see cref="ZeroMqRealtimeExchange"/> is started.
+        /// Gets a value indicating whether this <see cref="ZreMailbox"/> is started.
         /// </summary>
         /// <value>
         ///   <c>true</c> if started; otherwise, <c>false</c>.
@@ -147,11 +147,11 @@ namespace Intercom.Discovery
         }
 
         /// <summary>
-        /// Initializes a new instance of the <see cref="ZeroMqRealtimeExchange"/> class.
+        /// Initializes a new instance of the <see cref="ZreMailbox"/> class.
         /// </summary>
         /// <param name="uuid">The UUID.</param>
         /// <param name="zreBroadcastPort">The ZRE broadcast port.</param>
-        public ZeroMqRealtimeExchange(Guid? uuid = null, int zreBroadcastPort = DefaultZreBroadcastPort)
+        public ZreMailbox(Guid? uuid = null, int zreBroadcastPort = DefaultZreBroadcastPort)
         {
             _uuid = uuid ?? Guid.NewGuid();
             _zreBroadcastPort = zreBroadcastPort;
@@ -556,7 +556,7 @@ namespace Intercom.Discovery
         }
 
         /// <summary>
-        /// Gets a value indicating whether this <see cref="ZeroMqRealtimeExchange"/> is disposed.
+        /// Gets a value indicating whether this <see cref="ZreMailbox"/> is disposed.
         /// </summary>
         /// <value>
         ///   <c>true</c> if disposed; otherwise, <c>false</c>.

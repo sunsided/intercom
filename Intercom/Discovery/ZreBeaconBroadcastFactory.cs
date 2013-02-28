@@ -5,7 +5,7 @@ namespace Intercom.Discovery
     /// <summary>
     /// Factory that creates <see cref="ZreBeaconBroadcast"/> instances
     /// </summary>
-    sealed class ZreBeaconBroadcastFactory
+    sealed class ZreBeaconBroadcastFactory : IZreBroadcastFactory
     {
         /// <summary>
         /// Creates a <see cref="ZreBeaconBroadcast"/> instance.
@@ -13,7 +13,7 @@ namespace Intercom.Discovery
         /// <param name="uuid">The UUID.</param>
         /// <param name="broadcastPort">The broadcast port.</param>
         /// <returns>The broadcaster</returns>
-        public ZreBeaconBroadcast Create(Guid uuid, ushort broadcastPort)
+        public IZreBroadcast Create(Guid uuid, ushort broadcastPort)
         {
             return new ZreBeaconBroadcast(uuid, broadcastPort);
         }

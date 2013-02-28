@@ -9,7 +9,7 @@ namespace Intercom.Discovery
     /// <summary>
     /// UDP beacon broadcast for ZeroMQ Realtime Exchange as defined in <a href="http://rfc.zeromq.org/spec:20">http://rfc.zeromq.org/spec:20</a>
     /// </summary>
-    sealed class ZreBeaconBroadcast : IDisposable
+    sealed class ZreBeaconBroadcast : IDisposable, IZreBroadcast
     {
         /// <summary>
         /// Der Vorgabeport für ZRE-Broadcasts
@@ -62,7 +62,7 @@ namespace Intercom.Discovery
         /// <summary>
         /// The mailbox port to be broadcast
         /// </summary>
-        private ushort _mailboxPort;
+        private readonly ushort _mailboxPort;
 
         /// <summary>
         /// Tracks the time since the last beacon broadcast

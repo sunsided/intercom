@@ -21,7 +21,7 @@ namespace Intercom.Discovery
         /// <summary>
         /// Factory used to create beacon broadcast instances
         /// </summary>
-        private readonly ZreBeaconBroadcastFactory _broadcastFactory;
+        private readonly IZreBroadcastFactory _broadcastFactory;
 
         /// <summary>
         /// This node's UUID
@@ -72,7 +72,7 @@ namespace Intercom.Discovery
         /// <summary>
         /// The broadcaster
         /// </summary>
-        private ZreBeaconBroadcast _broadcast;
+        private IZreBroadcast _broadcast;
 
         /// <summary>
         /// The task used to poll the mailbox
@@ -99,7 +99,7 @@ namespace Intercom.Discovery
         /// </summary>
         /// <param name="broadcastFactory">The broadcast factory.</param>
         /// <param name="uuid">The UUID.</param>
-        public ZreMailbox(ZreBeaconBroadcastFactory broadcastFactory, Guid? uuid = null)
+        public ZreMailbox(IZreBroadcastFactory broadcastFactory, Guid? uuid = null)
         {
             _broadcastFactory = broadcastFactory;
             _uuid = uuid ?? Guid.NewGuid();
@@ -384,7 +384,6 @@ namespace Intercom.Discovery
                 {
                     _broadcast.PeerDiscovered -= OnBroadcastPeerDiscovered;
                     _broadcast.Stop();
-                    _broadcast.Dispose();
                     _broadcast = null;
                 }
 

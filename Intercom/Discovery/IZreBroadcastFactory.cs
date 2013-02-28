@@ -5,7 +5,7 @@ namespace Intercom.Discovery
     /// <summary>
     /// Interface for factories that create <see cref="IZreBroadcast"/> instances.
     /// </summary>
-    internal interface IZreBroadcastFactory 
+    public interface IZreBroadcastFactory 
     {
         /// <summary>
         /// Creates an <see cref="IZreBroadcast"/> instance.

@@ -51,12 +51,15 @@
   <ItemGroup>
     <Compile Include="Discovery\IZreBroadcast.cs" />
     <Compile Include="Discovery\IZreBroadcastFactory.cs" />
+    <Compile Include="Discovery\IZreMailbox.cs" />
+    <Compile Include="Discovery\IZreMailboxFactory.cs" />
     <Compile Include="Discovery\PeerDiscoveryEventArgs.cs" />
     <Compile Include="Discovery\PeerEventArgs.cs" />
     <Compile Include="Discovery\ZreBroadcast.cs" />
     <Compile Include="Discovery\ZreBroadcastFactory.cs" />
     <Compile Include="Discovery\ZreExtensions.cs" />
     <Compile Include="Discovery\ZreMailbox.cs" />
+    <Compile Include="Discovery\ZreMailboxFactory.cs" />
     <Compile Include="Program.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
   </ItemGroup>

@@ -14,9 +14,9 @@ using SocketType = ZeroMQ.SocketType;
 namespace Intercom.Discovery
 {
     /// <summary>
-    /// Implementierung des ZeroMQ Realtime Exchange-Protokolls, definiert unter <a href="http://rfc.zeromq.org/spec:20">http://rfc.zeromq.org/spec:20</a>
+    /// Implementation of the ZeroMQ Realtime Exchange protocol as defined in <a href="http://rfc.zeromq.org/spec:20">http://rfc.zeromq.org/spec:20</a>
     /// </summary>
-    sealed class ZreMailbox : IDisposable
+    sealed class ZreMailbox : IZreMailbox
     {
         /// <summary>
         /// Factory used to create beacon broadcast instances

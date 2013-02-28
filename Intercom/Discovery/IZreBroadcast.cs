@@ -2,9 +2,13 @@ using System;
 
 namespace Intercom.Discovery
 {
-    internal interface IZreBroadcast {
+    /// <summary>
+    /// Interface for ZRE Breacon Broadcasters.
+    /// </summary>
+    public interface IZreBroadcast : IDisposable
+    {
         /// <summary>
-        /// Gets a value indicating whether this <see cref="ZreMailbox"/> is started.
+        /// Gets a value indicating whether this <see cref="IZreBroadcast"/> is started.
         /// </summary>
         /// <value>
         ///   <c>true</c> if started; otherwise, <c>false</c>.

@@ -9,8 +9,9 @@ namespace Intercom
     {
         static void Main(string[] args)
         {
-            var factory = new ZreBroadcastFactory();
-            using (var zre = new ZreMailbox(factory))
+            var broadcastFactory = new ZreBroadcastFactory();
+            var mailboxFactory = new ZreMailboxFactory(broadcastFactory);
+            using (var zre = mailboxFactory.Create())
             {
                 // Starten
                 if (!zre.Start())

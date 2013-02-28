@@ -9,7 +9,7 @@ namespace Intercom.Discovery
     /// <summary>
     /// UDP beacon broadcast for ZeroMQ Realtime Exchange as defined in <a href="http://rfc.zeromq.org/spec:20">http://rfc.zeromq.org/spec:20</a>
     /// </summary>
-    sealed class ZreBroadcast : IDisposable, IZreBroadcast
+    sealed class ZreBroadcast : IZreBroadcast
     {
         /// <summary>
         /// Der Vorgabeport für ZRE-Broadcasts

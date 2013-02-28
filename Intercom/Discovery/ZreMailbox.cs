@@ -273,7 +273,7 @@ namespace Intercom.Discovery
                 if (peers == null) return;
 
                 // Register and connect the dealer
-                 node = new Node(endpointAddress, dealer);
+                 node = new Node(uuid, endpointAddress, dealer);
                 if (!_peers.TryAdd(uuid, node))
                 {
                     Trace.TraceWarning("Could not register peer because an entry for the same peer already existed; skipping.");
@@ -526,6 +526,14 @@ namespace Intercom.Discovery
             public bool Disposed { get; private set; }
 
             /// <summary>
+            /// The peer's uuid
+            /// </summary>
+            public Guid Uuid
+            {
+                get { return _uuid; }
+            }
+
+            /// <summary>
             /// Gets a value indicating whether this instance is connected.
             /// </summary>
             /// <value>
@@ -554,6 +562,11 @@ namespace Intercom.Discovery
             private readonly Stopwatch _lastSeen = Stopwatch.StartNew();
 
             /// <summary>
+            /// The node's uuid
+            /// </summary>
+            private readonly Guid _uuid;
+
+            /// <summary>
             /// Gets the duration since the peer was last seen on the network.
             /// </summary>
             /// <seealso cref="MarkAlive"/>
@@ -565,8 +578,9 @@ namespace Intercom.Discovery
             /// <summary>
             /// Initializes a new instance of the <see cref="T:System.Object"/> class.
             /// </summary>
-            public Node(string endpoint, ZmqSocket dealerSocket)
+            public Node(Guid uuid, string endpoint, ZmqSocket dealerSocket)
             {
+                _uuid = uuid;
                 _endpoint = endpoint;
                 _dealerSocket = dealerSocket;
             }

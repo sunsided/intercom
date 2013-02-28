@@ -30,6 +30,12 @@ namespace Intercom.Discovery
         void BroadcastBeacon();
 
         /// <summary>
+        /// Starts this instance.
+        /// </summary>
+        /// <returns><see langword="true"/> if this instance was started; otherwise <see langword="false"/></returns>
+        bool Start();
+
+        /// <summary>
         /// Stops this instance.
         /// </summary>
         void Stop();

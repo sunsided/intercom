@@ -263,41 +263,36 @@ namespace Intercom.Discovery
         /// <returns>The matching interface's IP address or <see langword="null"/> if no match was found</returns>
         private static IPAddress DetectInterfaceForEndpoint(IPEndPoint endpoint)
         {
-            foreach (var ni in NetworkInterface.GetAllNetworkInterfaces())
+            // TODO: Currently IPv6 is not supported
+            if (endpoint.AddressFamily != AddressFamily.InterNetwork) return null;
+
+            // Query the interfaces
+            var unicastAddresses = NetworkInterface.GetAllNetworkInterfaces()
+                .Select(ni => ni.GetIPProperties())
+                .SelectMany(prop => prop.UnicastAddresses)
+                .Where(uni => uni.Address.AddressFamily == endpoint.AddressFamily);
+
+            foreach (var unicastAddress in unicastAddresses)
             {
-                var properties = ni.GetIPProperties();
-                var unicastAddresses = properties.UnicastAddresses;
-                foreach (var unicastAddress in unicastAddresses)
+                // early exit if message is from the same interface
+                if (unicastAddress.Address.Equals(endpoint.Address)) return unicastAddress.Address;
+
+                // get the address bytes
+                byte[] maskBytes = unicastAddress.IPv4Mask.GetAddressBytes();
+                var ifIpBytes = unicastAddress.Address.GetAddressBytes();
+                var ipBytes = endpoint.Address.GetAddressBytes();
+
+                // extract endian-correct addresses
+                var ifIp = (uint)IPAddress.NetworkToHostOrder((int)BitConverter.ToUInt32(ifIpBytes, 0)); // TODO: verify on big-endian machine
+                var mask = (uint)IPAddress.NetworkToHostOrder((int)BitConverter.ToUInt32(maskBytes, 0));
+                var address = (uint)IPAddress.NetworkToHostOrder((int)BitConverter.ToUInt32(ipBytes, 0));
+
+                // test the ip range
+                uint rangeEnd = ifIp & mask;
+                uint rangeStart = ifIp | ~mask;
+                if (rangeEnd <= address && rangeStart >= address)
                 {
-                    if (endpoint.AddressFamily != unicastAddress.Address.AddressFamily)
-                    {
-                        continue;
-                    }
-
-                    // TODO: Support IPv6
-                    if (unicastAddress.Address.AddressFamily == AddressFamily.InterNetwork)
-                    {
-                        // early exit if message is from the same interface
-                        if (unicastAddress.Address.Equals(endpoint.Address)) return unicastAddress.Address;
-
-                        // get the address bytes
-                        byte[] maskBytes = unicastAddress.IPv4Mask.GetAddressBytes();
-                        var ifIpBytes = unicastAddress.Address.GetAddressBytes();
-                        var ipBytes = endpoint.Address.GetAddressBytes();
-
-                        // extract endian-correct addresses
-                        var ifIp = (uint)IPAddress.NetworkToHostOrder((int)BitConverter.ToUInt32(ifIpBytes, 0));
-                        var mask = (uint)IPAddress.NetworkToHostOrder((int)BitConverter.ToUInt32(maskBytes, 0));
-                        var address = (uint)IPAddress.NetworkToHostOrder((int)BitConverter.ToUInt32(ipBytes, 0));
-
-                        // test the ip range
-                        uint rangeEnd = ifIp & mask;
-                        uint rangeStart = ifIp | ~mask;
-                        if (rangeEnd <= address && rangeStart >= address)
-                        {
-                            return unicastAddress.Address;
-                        }
-                    }
+                    return unicastAddress.Address;
                 }
             }
             return null;

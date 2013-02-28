@@ -3,7 +3,6 @@ using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Globalization;
-using System.IO;
 using System.Linq;
 using System.Net;
 using System.Net.Sockets;
@@ -20,29 +19,9 @@ namespace Intercom.Discovery
     sealed class ZreMailbox : IDisposable
     {
         /// <summary>
-        /// Der Vorgabeport für ZRE-Broadcasts
-        /// </summary>
-        private const int DefaultZreBroadcastPort = 12345;
-
-        /// <summary>
-        /// Länge der Beacon-Daten
-        /// </summary>
-        private const int BeaconSize = 22;
-
-        /// <summary>
-        /// Header für ZRE-Beacons der Version 1
-        /// </summary>
-        private static readonly byte[] BeaconVersion1Header = new[] { (byte)'Z', (byte)'R', (byte)'E', (byte)0x01 };
-
-        /// <summary>
-        /// Die ID des Knoten
+        /// This node's UUID
         /// </summary>
         private readonly Guid _uuid;
-
-        /// <summary>
-        /// Der Broadcast-Port, an welchen die Beacons gesendet werden sollen
-        /// </summary>
-        private readonly int _zreBroadcastPort;
 
         /// <summary>
         /// Der Kontext
@@ -53,16 +32,6 @@ namespace Intercom.Discovery
         /// Der Router-Socket
         /// </summary>
         private ZmqSocket _mailbox;
-
-        /// <summary>
-        /// Receiver für Broadcasts
-        /// </summary>
-        private UdpClient _broadcastReceiver;
-
-        /// <summary>
-        /// Sender für Broadcasts
-        /// </summary>
-        private UdpClient _broadcastSender;
 
         /// <summary>
         /// Der Port des Routers
@@ -81,11 +50,6 @@ namespace Intercom.Discovery
         public bool Started { get; private set; }
 
         /// <summary>
-        /// Die Beacon-Bytes
-        /// </summary>
-        private byte[] _beacon;
-
-        /// <summary>
         /// The dictionary of peers
         /// </summary>
         private ConcurrentDictionary<Guid, Node> _peers;
@@ -96,27 +60,19 @@ namespace Intercom.Discovery
         private CancellationTokenSource _cancellationTokenSource;
 
         /// <summary>
-        /// Occurs when a peer was discovered.
-        /// </summary>
-        /// <remarks>
-        /// Peer discovery does not imply a successful connection.
-        /// </remarks>
-        public event EventHandler<PeerEventArgs> PeerDiscovered;
-
-        /// <summary>
         /// Occurs when a peer was disconnected.
         /// </summary>
         public event EventHandler<PeerEventArgs> PeerDisconnected;
 
         /// <summary>
+        /// The broadcaster
+        /// </summary>
+        private ZreBeaconBroadcast _broadcast;
+
+        /// <summary>
         /// The task used to poll the mailbox
         /// </summary>
         private Task _mailboxPollTask;
-
-        /// <summary>
-        /// The multicast IP to be used
-        /// </summary>
-        private readonly IPAddress _multicastIp = IPAddress.Parse("224.0.0.0");
 
         /// <summary>
         /// Task zur Mailbox-Verarbeitung
@@ -134,27 +90,12 @@ namespace Intercom.Discovery
         private AutoResetEvent _dataAvailable;
 
         /// <summary>
-        /// Tracks the time since the last beacon broadcast
-        /// </summary>
-        private Stopwatch _timeSinceBeaconBroadcast;
-
-        /// <summary>
-        /// Gets the time since the last beacon broadcast
-        /// </summary>
-        public TimeSpan TimeSinceBeaconBroadcast
-        {
-            get { return _timeSinceBeaconBroadcast != null ? _timeSinceBeaconBroadcast.Elapsed : TimeSpan.MaxValue; }
-        }
-
-        /// <summary>
         /// Initializes a new instance of the <see cref="ZreMailbox"/> class.
         /// </summary>
         /// <param name="uuid">The UUID.</param>
-        /// <param name="zreBroadcastPort">The ZRE broadcast port.</param>
-        public ZreMailbox(Guid? uuid = null, int zreBroadcastPort = DefaultZreBroadcastPort)
+        public ZreMailbox(Guid? uuid = null)
         {
             _uuid = uuid ?? Guid.NewGuid();
-            _zreBroadcastPort = zreBroadcastPort;
         }
 
         /// <summary>
@@ -163,9 +104,6 @@ namespace Intercom.Discovery
         public bool Start()
         {
             if (Started) return true;
-
-            // Prepare the time tracking
-            _timeSinceBeaconBroadcast = new Stopwatch();
 
             // Prepare peer asynchronous operation
             _cancellationTokenSource = new CancellationTokenSource();
@@ -193,24 +131,27 @@ namespace Intercom.Discovery
             _mailboxPollTask = Task.Factory.StartNew(MailboxPollTask, new ConsumerTaskState(_mailbox, _cancellationTokenSource.Token, _dataAvailable, _mailboxMessageQueue), TaskCreationOptions.LongRunning);
             _mailboxProcessTask = Task.Factory.StartNew(MailboxProcessTask, new ConsumerTaskState(null, _cancellationTokenSource.Token, _dataAvailable, _mailboxMessageQueue), TaskCreationOptions.LongRunning);
 
-            // Beacon generieren
-            _beacon = CreateVersion1Beacon(_uuid, _mailboxPort);
-
-            // UPD receiver erzeugen
-            var receiveIp = _multicastIp;
-            var receiveEndpoint = new IPEndPoint(IPAddress.Any, _zreBroadcastPort);
-            _broadcastReceiver = new UdpClient();
-            _broadcastReceiver.Client.SetSocketOption(SocketOptionLevel.Socket, SocketOptionName.ReuseAddress, 1);
-            _broadcastReceiver.JoinMulticastGroup(receiveIp); // TODO: Allow multiple multicast IPs (224.0.0.0 .. 239.255.255.255)
-            _broadcastReceiver.Client.Bind(receiveEndpoint);
-            StartReceiveBroadcast(_broadcastReceiver);
-
-            // UDP sender erzeugen
-            _broadcastSender = new UdpClient();
+            // Broadcast erzeugen
+            _broadcast = new ZreBeaconBroadcast(_uuid, _mailboxPort); // TODO: Use a factory
+            _broadcast.PeerDiscovered += OnBroadcastPeerDiscovered;
+            _broadcast.Start();
 
             // Oink
             Started = true;
             return true;
+        }
+
+        /// <summary>
+        /// Called when a peer was discovered by broadcast.
+        /// </summary>
+        /// <param name="sender">The sender.</param>
+        /// <param name="peerDiscoveryEventArgs">The <see cref="Intercom.Discovery.PeerDiscoveryEventArgs"/> instance containing the event data.</param>
+        private void OnBroadcastPeerDiscovered(object sender, PeerDiscoveryEventArgs peerDiscoveryEventArgs)
+        {
+            var endpoint = peerDiscoveryEventArgs.Mailbox;
+            var uuid = peerDiscoveryEventArgs.Uuid;
+            
+            RegisterPeer(endpoint, uuid);
         }
 
         /// <summary>
@@ -274,6 +215,7 @@ namespace Intercom.Discovery
                 while (queue.TryDequeue(out message))
                 {
                     // process message
+                    // TODO: Assert message is two frames long (first added by ROUTER), second containing command
                 }
 
                 // sleep
@@ -282,111 +224,17 @@ namespace Intercom.Discovery
         }
 
         /// <summary>
-        /// Stops this instance.
+        /// Broadcasts a beacon.
         /// </summary>
-        public void Stop()
+        public void BroadcastBeacon()
         {
-            if (!Started) return;
-            StopInternal();
+            var broadcast = _broadcast;
+            if (broadcast != null)
+            {
+                broadcast.BroadcastBeacon();
+            }
         }
         
-        /// <summary>
-        /// Beginnt das Horchen auf UDP-Broadcasts
-        /// </summary>
-        private void StartReceiveBroadcast(UdpClient client)
-        {
-            var ip = new IPEndPoint(IPAddress.Any, _zreBroadcastPort);
-            var state = new UdpState(ip, client);
-
-            // Mit dem Warten beginnen
-            client.BeginReceive(EndReceiveBroadcast, state);
-        }
-
-        /// <summary>
-        /// Broadcast wurde über UDP empfangen
-        /// </summary>
-        /// <param name="ar"></param>
-        private void EndReceiveBroadcast(IAsyncResult ar)
-        {
-            try
-            {
-                var state = ar.AsyncState as UdpState;
-                Debug.Assert(state != null);
-            
-                // Receiver ermitteln
-                var receiver = state.Client;
-                if (receiver.Client == null) return;
-                if (!receiver.Client.IsBound) return;
-
-                // Endpunkt ermitteln
-                IPEndPoint endpoint = state.EndPoint;
-                Debug.Assert(endpoint != null);
-
-                // Daten lesen
-                var payload = receiver.EndReceive(ar, ref endpoint);
-
-                // Port freigeben
-                StartReceiveBroadcast(receiver);
-
-                // Daten verarbeiten
-                ProcessBroadcastPayload(endpoint, payload);
-            }
-            catch (ObjectDisposedException) { }
-            catch (SocketException) { }
-        }
-
-        /// <summary>
-        /// Verarbeitet die Daten des UDP-Broadcasts
-        /// </summary>
-        /// <param name="endpoint">The endpoint.</param>
-        /// <param name="payload">Die Daten</param>
-        private void ProcessBroadcastPayload(IPEndPoint endpoint, byte[] payload)
-        {
-            if (payload == null) return;
-            if (payload.Length != BeaconSize) return;
-
-            // Header überprüfen
-            var sentHeader = BitConverter.ToInt32(payload, 0);
-            var version1Header = BitConverter.ToInt32(BeaconVersion1Header, 0);
-            if (sentHeader != version1Header) return;
-
-            // UUID parsen
-            var uuid = ParseGuidFromBytes(payload, 4);
-            if (uuid == _uuid) return;
-            
-            // Port beziehen
-            var port = (ushort)IPAddress.NetworkToHostOrder(BitConverter.ToInt16(payload, 20));
-
-            // Mailbox registrieren
-            var maildboxEndpoint = new IPEndPoint(endpoint.Address, port);
-            RegisterPeer(maildboxEndpoint, uuid);
-        }
-
-        /// <summary>
-        /// Parses an UUID from a byte sequence
-        /// </summary>
-        /// <param name="payload">The payload.</param>
-        /// <param name="startIndex">The start index.</param>
-        /// <returns></returns>
-        private static Guid ParseGuidFromBytes(byte[] payload, int startIndex)
-        {
-            if (payload == null) throw new ArgumentNullException("payload");
-            if (payload.Length - startIndex < 16) throw new ArgumentException("Payload must be at least 16 bytes long");
-
-            int a = BitConverter.ToInt32(payload, startIndex);
-            short b = BitConverter.ToInt16(payload, startIndex + 4 );
-            short c = BitConverter.ToInt16(payload, startIndex + 6);
-            byte d = payload[startIndex + 8 ],
-                 e = payload[startIndex + 9],
-                 f = payload[startIndex + 10],
-                 g = payload[startIndex + 11],
-                 h = payload[startIndex + 12],
-                 i = payload[startIndex + 13],
-                 j = payload[startIndex + 14],
-                 k = payload[startIndex + 15];
-            return new Guid(a, b, c, d, e, f, g, h, i, j, k);
-        }
-
         /// <summary>
         /// Registers the mailbox.
         /// </summary>
@@ -423,9 +271,6 @@ namespace Intercom.Discovery
                 Trace.TraceError("An error occured during peer registration: {0}", e.Message);
                 return;
             }
-
-            // Send event
-            OnPeerDiscovered(new PeerEventArgs(uuid));
 
             // Send dummy data ...
             SendMessage(uuid, new byte[] {1, 2, 3, 4});
@@ -477,85 +322,6 @@ namespace Intercom.Discovery
         }
 
         /// <summary>
-        /// Erzeugt ein ZRE v1-Beacon
-        /// </summary>
-        /// <param name="uuid">Die UUID des Knotens</param>
-        /// <param name="port">Der ZRE-Port</param>
-        /// <returns>Die Beacon-Bytes</returns>
-        private static byte[] CreateVersion1Beacon(Guid uuid, ushort port)
-        {
-            // Payload erzeugen
-            var header = BeaconVersion1Header;
-            Debug.Assert(BeaconVersion1Header.Length == 4);
-
-            // UUID
-            var uuidBytes = uuid.ToByteArray();
-            Debug.Assert(uuidBytes.Length == 16);
-
-            // Version
-            var routerPort = IPAddress.HostToNetworkOrder((short)port);
-            var routerPortBytes = BitConverter.GetBytes(routerPort);
-            Debug.Assert(routerPortBytes.Length == 2);
-
-            // Beacon erzeugen
-            using (MemoryStream stream = new MemoryStream())
-            {
-                stream.Write(header, 0, header.Length); 
-                stream.Write(uuidBytes, 0, uuidBytes.Length);
-                stream.Write(routerPortBytes, 0, routerPortBytes.Length);
-                var beacon = stream.ToArray();
-                Debug.Assert(beacon.Length == BeaconSize);
-                return beacon;
-            }
-        }
-
-        /// <summary>
-        /// Sendet ein Beacon
-        /// </summary>
-        public void BroadcastBeacon()
-        {
-            var sender = _broadcastSender;
-            if (sender == null) return;
-
-            // Beacon beziehen
-            var beacon = _beacon;
-            if (beacon == null) return;
-
-            // Daten senden
-            var multicastIp = _multicastIp;
-            var multicastEndpoint = new IPEndPoint(multicastIp, _zreBroadcastPort);
-            var state = new UdpState(multicastEndpoint, sender);
-            sender.BeginSend(beacon, beacon.Length, multicastEndpoint, EndBroadcastBeacon, state);
-        }
-
-        /// <summary>
-        /// Beendet eine asynchrone Sendeoperation
-        /// </summary>
-        /// <param name="ar"></param>
-        private void EndBroadcastBeacon(IAsyncResult ar)
-        {
-            try
-            {
-                var state = ar.AsyncState as UdpState;
-                Debug.Assert(state != null);
-
-                // Sender ermitteln
-                var sender = state.Client;
-                if (sender.Client == null) return;
-                if (!sender.Client.IsBound) return;
-
-                // Senden beenden
-                sender.EndSend(ar);
-
-                // Notify
-                var tracker = _timeSinceBeaconBroadcast;
-                if (tracker != null) tracker.Restart();
-            }
-            catch (ObjectDisposedException) { }
-            catch (SocketException) { }
-        }
-
-        /// <summary>
         /// Gets a value indicating whether this <see cref="ZreMailbox"/> is disposed.
         /// </summary>
         /// <value>
@@ -589,6 +355,14 @@ namespace Intercom.Discovery
             Dispose(true);
         }
 
+        /// <summary>
+        /// Stops this instance.
+        /// </summary>
+        public void Stop()
+        {
+            if (!Started) return;
+            StopInternal();
+        }
 
         /// <summary>
         /// Stops this instance.
@@ -597,6 +371,15 @@ namespace Intercom.Discovery
         {
             try
             {
+                // stop the broadcast
+                if (_broadcast != null)
+                {
+                    _broadcast.PeerDiscovered -= OnBroadcastPeerDiscovered;
+                    _broadcast.Stop();
+                    _broadcast.Dispose();
+                    _broadcast = null;
+                }
+
                 // Signal stop and wake up consumer
                 if (_cancellationTokenSource != null)
                 {
@@ -635,24 +418,6 @@ namespace Intercom.Discovery
                 {
                     _cancellationTokenSource.Dispose();
                     _cancellationTokenSource = null;
-                }
-
-                // Release the Kraken
-                _beacon = null;
-                _timeSinceBeaconBroadcast = null;
-
-                // Release broadcast sender
-                if (_broadcastSender != null)
-                {
-                    _broadcastSender.Close();
-                    _broadcastSender = null;
-                }
-
-                // Release broadcast receiver
-                if (_broadcastReceiver != null)
-                {
-                    _broadcastReceiver.Close();
-                    _broadcastReceiver = null;
                 }
 
                 // Release mailbox router
@@ -706,19 +471,6 @@ namespace Intercom.Discovery
         }
 
         /// <summary>
-        /// Raises the <see cref="PeerDiscovered"/> event.
-        /// </summary>
-        /// <param name="e">The <see cref="Intercom.Discovery.PeerEventArgs"/> instance containing the event data.</param>
-        private void OnPeerDiscovered(PeerEventArgs e)
-        {
-            EventHandler<PeerEventArgs> handler = PeerDiscovered;
-            if (handler != null)
-            {
-                handler(this, e);
-            }
-        }
-
-        /// <summary>
         /// Raises the <see cref="PeerDisconnected"/> event.
         /// </summary>
         /// <param name="e">The <see cref="Intercom.Discovery.PeerEventArgs"/> instance containing the event data.</param>
@@ -732,31 +484,6 @@ namespace Intercom.Discovery
         }
 
         #region Internal state variables
-
-        /// <summary>
-        /// UDP-State für asynchrone Verarbeitung
-        /// </summary>
-        private sealed class UdpState
-        {
-            /// <summary>
-            /// Der Endpunkt
-            /// </summary>
-            public readonly IPEndPoint EndPoint;
-
-            /// <summary>
-            /// Der Client
-            /// </summary>
-            public readonly UdpClient Client;
-
-            /// <summary>
-            /// Initializes a new instance of the <see cref="T:System.Object"/> class.
-            /// </summary>
-            public UdpState(IPEndPoint endPoint, UdpClient client)
-            {
-                EndPoint = endPoint;
-                Client = client;
-            }
-        }
 
         /// <summary>
         /// A remote node

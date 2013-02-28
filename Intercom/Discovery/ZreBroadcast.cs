@@ -1,7 +1,9 @@
 ﻿using System;
 using System.Diagnostics;
 using System.IO;
+using System.Linq;
 using System.Net;
+using System.Net.NetworkInformation;
 using System.Net.Sockets;
 
 namespace Intercom.Discovery
@@ -238,16 +240,67 @@ namespace Intercom.Discovery
             var version1Header = BitConverter.ToInt32(BeaconVersion1Header, 0);
             if (sentHeader != version1Header) return;
 
-            // UUID parsen
+            // Get the interface used to talk to that client; discard message if no interface was found
+            var interfaceMatch = DetectInterfaceForEndpoint(endpoint);
+            if (interfaceMatch == null) return;
+
+            // Parse the uuid and discard the message if we caught our own echo
             var uuid = payload.ParseGuid(4);
             if (uuid == _uuid) return;
 
-            // Port beziehen
+            // Extract the mailbox port
             var port = (ushort)IPAddress.NetworkToHostOrder(BitConverter.ToInt16(payload, 20));
 
             // Mailbox registrieren
             var mailboxEndpoint = new IPEndPoint(endpoint.Address, port);
-            OnPeerDiscovered(new PeerDiscoveryEventArgs(uuid, mailboxEndpoint));
+            OnPeerDiscovered(new PeerDiscoveryEventArgs(uuid, mailboxEndpoint, interfaceMatch));
+        }
+
+        /// <summary>
+        /// Detects the correct interface for the given endpoint
+        /// </summary>
+        /// <param name="endpoint">The endpoint</param>
+        /// <returns>The matching interface's IP address or <see langword="null"/> if no match was found</returns>
+        private static IPAddress DetectInterfaceForEndpoint(IPEndPoint endpoint)
+        {
+            foreach (var ni in NetworkInterface.GetAllNetworkInterfaces())
+            {
+                var properties = ni.GetIPProperties();
+                var unicastAddresses = properties.UnicastAddresses;
+                foreach (var unicastAddress in unicastAddresses)
+                {
+                    if (endpoint.AddressFamily != unicastAddress.Address.AddressFamily)
+                    {
+                        continue;
+                    }
+
+                    // TODO: Support IPv6
+                    if (unicastAddress.Address.AddressFamily == AddressFamily.InterNetwork)
+                    {
+                        // early exit if message is from the same interface
+                        if (unicastAddress.Address.Equals(endpoint.Address)) return unicastAddress.Address;
+
+                        // get the address bytes
+                        byte[] maskBytes = unicastAddress.IPv4Mask.GetAddressBytes();
+                        var ifIpBytes = unicastAddress.Address.GetAddressBytes();
+                        var ipBytes = endpoint.Address.GetAddressBytes();
+
+                        // extract endian-correct addresses
+                        var ifIp = (uint)IPAddress.NetworkToHostOrder((int)BitConverter.ToUInt32(ifIpBytes, 0));
+                        var mask = (uint)IPAddress.NetworkToHostOrder((int)BitConverter.ToUInt32(maskBytes, 0));
+                        var address = (uint)IPAddress.NetworkToHostOrder((int)BitConverter.ToUInt32(ipBytes, 0));
+
+                        // test the ip range
+                        uint rangeEnd = ifIp & mask;
+                        uint rangeStart = ifIp | ~mask;
+                        if (rangeEnd <= address && rangeStart >= address)
+                        {
+                            return unicastAddress.Address;
+                        }
+                    }
+                }
+            }
+            return null;
         }
 
         /// <summary>

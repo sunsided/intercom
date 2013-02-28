@@ -14,13 +14,20 @@ namespace Intercom.Discovery
         public IPEndPoint Mailbox { get; private set; }
 
         /// <summary>
+        /// The interface the peer was detected on
+        /// </summary>
+        public IPAddress Interface { get; private set; }
+
+        /// <summary>
         /// Initializes a new instance of the <see cref="PeerDiscoveryEventArgs"/> class.
         /// </summary>
         /// <param name="uuid">The UUID.</param>
         /// <param name="mailbox">The mailbox.</param>
-        public PeerDiscoveryEventArgs(Guid uuid, IPEndPoint mailbox)
+        /// <param name="localInterface">The local interface.</param>
+        public PeerDiscoveryEventArgs(Guid uuid, IPEndPoint mailbox, IPAddress localInterface)
             : base(uuid)
         {
+            Interface = localInterface;
             Mailbox = mailbox;
         }
     }

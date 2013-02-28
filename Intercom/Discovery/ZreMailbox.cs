@@ -3,6 +3,7 @@ using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Globalization;
+using System.IO;
 using System.Linq;
 using System.Net;
 using System.Net.Sockets;
@@ -158,8 +159,9 @@ namespace Intercom.Discovery
         {
             var endpoint = peerDiscoveryEventArgs.Mailbox;
             var uuid = peerDiscoveryEventArgs.Uuid;
-            
-            RegisterPeer(endpoint, uuid);
+            var localInterface = peerDiscoveryEventArgs.Interface;
+
+            RegisterPeer(endpoint, uuid, localInterface);
         }
 
         /// <summary>
@@ -242,13 +244,14 @@ namespace Intercom.Discovery
                 broadcast.BroadcastBeacon();
             }
         }
-        
+
         /// <summary>
         /// Registers the mailbox.
         /// </summary>
         /// <param name="endpoint">The endpoint address.</param>
         /// <param name="uuid">The UUID.</param>
-        private void RegisterPeer(IPEndPoint endpoint, Guid uuid)
+        /// <param name="localInterface">The local interface.</param>
+        private void RegisterPeer(IPEndPoint endpoint, Guid uuid, IPAddress localInterface)
         {
             Node node = null;
             bool success = false;
@@ -299,6 +302,8 @@ namespace Intercom.Discovery
             // Send HELLO
             if (success)
             {
+                // TODO: Send HELLO using the address given in localInterface
+
                 // Send dummy data ...
                 SendMessage(uuid, new byte[] { 1, 2, 3, 4 });
             }
@@ -347,6 +352,37 @@ namespace Intercom.Discovery
             // TODO: What about DontWait?
 
             return true;
+        }
+
+        /// <summary>
+        /// Creates a HELLO command
+        /// </summary>
+        /// <returns>The payload bytes</returns>
+        private byte[] CreateHelloCommand(IPEndPoint mailbox)
+        {
+            // TODO: Check that the address is a real interface (not "*"!) -- enforce binding in broadcaster?
+
+            using (MemoryStream stream = new MemoryStream()) // TODO: set capacity
+            {
+                // header: signature
+                stream.WriteByte(0xAA);
+                stream.WriteByte(0xA1);
+
+                // header: sequence
+                ushort sequence = (ushort)IPAddress.HostToNetworkOrder((short)1);
+                byte[] sequenceBytes = BitConverter.GetBytes(sequence);
+                Debug.Assert(sequenceBytes.Length == 2);
+                stream.Write(sequenceBytes, 0, sequenceBytes.Length);
+
+                // command id
+                stream.WriteByte(0x01);
+
+                // ipaddress
+
+
+                // get payload
+                return stream.ToArray();
+            }
         }
 
         /// <summary>

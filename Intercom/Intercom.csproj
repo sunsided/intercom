@@ -49,19 +49,23 @@
     <Reference Include="System.Xml" />
   </ItemGroup>
   <ItemGroup>
+    <Compile Include="Discovery\IZreBroadcast.cs" />
+    <Compile Include="Discovery\IZreBroadcastFactory.cs" />
+    <Compile Include="Discovery\IZreMailbox.cs" />
+    <Compile Include="Discovery\IZreMailboxFactory.cs" />
+    <Compile Include="Discovery\PeerDiscoveryEventArgs.cs" />
     <Compile Include="Discovery\PeerEventArgs.cs" />
-    <Compile Include="Discovery\ZeroMqRealtimeExchange.cs" />
+    <Compile Include="Discovery\ZreBroadcast.cs" />
+    <Compile Include="Discovery\ZreBroadcastFactory.cs" />
+    <Compile Include="Discovery\ZreExtensions.cs" />
+    <Compile Include="Discovery\ZreMailbox.cs" />
+    <Compile Include="Discovery\ZreMailboxFactory.cs" />
     <Compile Include="Program.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
   </ItemGroup>
   <ItemGroup>
     <None Include="app.config" />
     <None Include="packages.config" />
-  </ItemGroup>
-  <ItemGroup>
-    <None Include="libzmq.dll">
-      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-    </None>
   </ItemGroup>
   <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
   <!-- To modify your build process, add your task inside one of the targets below and uncomment it. 
